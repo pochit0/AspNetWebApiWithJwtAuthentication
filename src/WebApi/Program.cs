@@ -1,15 +1,59 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using WebApi.Context;
 using WebApi.Models;
+using WebApi.Services;
+using WebApi.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
+var _services = builder.Services;
+var _configuration = builder.Configuration;
 
-// Add services to the container.
+// Configuration from AppSettings
+_services.Configure<JWT>(_configuration.GetSection("JWT"));
 
-builder.Services.AddControllers();
+//User Manager Service
+_services.AddIdentity<ApplicationUser, IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
+_services.AddScoped<IUserService, UserService>();
+
+//Adding DB Context with MSSQL
+_services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(
+        _configuration.GetConnectionString("AspNetDb"),
+        b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
+
+//Adding Athentication - JWT
+_services
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.SaveToken = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero,
+            ValidIssuer = _configuration["JWT:Issuer"],
+            ValidAudience = _configuration["JWT:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT:Key"]))
+        };
+    });
+
+_services.AddControllers();
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+_services.AddEndpointsApiExplorer();
+_services.AddSwaggerGen();
 
 var app = builder.Build();
 
@@ -40,6 +84,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 
